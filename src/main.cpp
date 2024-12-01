@@ -10,6 +10,7 @@
 using namespace std;
 
 void *mapper_function(void *arg) {
+    cout << "New thread:\n";
     if (arg == NULL) {
         cout << "Argumentul pentru mapper function nu este valid!";
         exit(-1);
@@ -46,10 +47,12 @@ void *mapper_function(void *arg) {
 
         cout << "Fisierul primit este: " << file_info.file_path << "\n Continutul fisierului:\n";
 
-        string test_line;
-        while (getline(q_file, test_line)) {
-            cout << test_line << "\n";
+        string current_line;
+        while (getline(q_file, current_line)) {
+            cout << current_line << "\n";
         }
+
+        extract_words_from_file(q_file, &(tp->partial_lists[]));
 
         // inchidere fisier
         q_file.close();
@@ -63,19 +66,41 @@ void *reducer_function(void *arg) {
         exit(-1);
     }
 
+    // declarare lista finala generata de thread-ul curent
+    // aceasta contine elemente de tipul (cuvant, lista de indecsi ai fisierelor)
+    map<string, vector<unsigned int>> thread_list;
+
     // procesare task-uri
     while (true) {
         pthread_mutex_lock(&tp->work_mutex);
 
-        // daca mapperii au terminat lucrul
-        if (tp->finished_mapping) {
-            // daca nu mai exista de lucru in coada, thread-ul isi termina executia
-            if (tp->finished_reducing) {
-                pthread_mutex_unlock(&tp->work_mutex);
-                pthread_exit(NULL);
-            }
+        // daca nu mai este de lucru pentru reduceri, thread-ul isi termina executia
+        if (tp->finished_reducing) {
+            pthread_mutex_unlock(&tp->work_mutex);
+            pthread_exit(NULL);
+        }
+        if (tp->finished_aggregation) {
+            // TODO: primul thread disponibil se ocupa de scrierea fisierelor "litera".txt
 
-            // TODO: reducer thread work
+            tp->finished_reducing = true;
+            pthread_mutex_unlock(&tp->work_mutex);
+            pthread_exit(NULL);
+        }
+
+        // verifica daca mapperii au terminat lucrul
+        if (tp->finished_mapping) {
+            // agregarea cuvintelor din listele partiale disponibile in lista thread-ului curent
+
+            // cauta prima lista nevizitata
+            for (size_t i = 0; i < tp->partial_lists.size(); i++) {
+                if (!(tp->partial_lists[i].is_visited)) {
+                    // TODO
+                    // process given unvisited partial list and put it in the thread list
+                }
+            }
+            
+            pthread_mutex_unlock(&tp->work_mutex);
+            pthread_exit(NULL);
         }
 
         pthread_mutex_unlock(&tp->work_mutex);
@@ -131,7 +156,7 @@ int main(int argc, char **argv)
     tp.finished_reducing = false;
     pthread_mutex_init(&(tp.work_mutex), NULL);
     tp.threads = (pthread_t*) calloc(num_mapper_threads + num_reducer_threads, sizeof(pthread_t));
-    tp.partial_lists = (map<string, vector<unsigned int>>*) calloc(num_mapper_threads, sizeof(map<string, vector<unsigned int>>));
+    // tp.partial_lists = (map<string, vector<unsigned int>>*) calloc(num_mapper_threads, sizeof(map<string, vector<unsigned int>>));
 
     // citire numar fisiere
     string line;
@@ -197,7 +222,7 @@ int main(int argc, char **argv)
 
     // se elibereaza memoria alocata pentru thread-uri si pentru liste
     free(tp.threads);
-    free(tp.partial_lists);
+    // free(tp.partial_lists);
 
     return 0;
 }
