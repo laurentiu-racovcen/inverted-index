@@ -5,14 +5,31 @@
 #include <pthread.h>
 #include <string>
 #include <queue>
-#include <set>
 
 using namespace std;
+
+struct sort_elements {
+    bool operator() (const pair<string, vector<unsigned int>> &a,
+                    const pair<string, vector<unsigned int>> &b) const {
+        // sortare descrescatoare dupa numarul de file_id-uri
+        if (a.second.size() != b.second.size()) {
+            return a.second.size() > b.second.size();
+        }
+        // sortare crescatoare alfabetica dupa cuvant
+        return a.first < b.first;
+    }
+};
 
 typedef struct {
     map<string, vector<unsigned int>> elems;
     bool is_visited_by_reducer; // pentru sincronizarea thread-urilor reducer
 } partial_list_t;
+
+typedef struct {
+    map<string, vector<unsigned int>> elems;
+    char letter;
+    bool is_visited_by_reducer; // pentru sincronizarea thread-urilor reducer
+} final_list_t;
 
 typedef struct {
     unsigned int file_id;
@@ -27,9 +44,11 @@ typedef struct {
     queue<file_info_t> files_queue;   // stocheaza datele fisierelor care trebuie procesate de mapperi
     pthread_cond_t cond;
     partial_list_t* partial_lists;    // o lista partiala contine elemente de forma (cuvant, lista de file_id-uri)
+    vector<pair<string, vector<unsigned int>>>* final_lists;
     bool finished_mapping;            // pentru a semnaliza daca procesarea de catre mapperi s-a terminat (coada de task-uri "map" este goala)
-    bool finished_reducing;           // pentru a semnaliza daca procesarea de catre reduceri s-a terminat (coada de task-uri "reduce" este goala)
-    bool finished_aggregation;
+    bool started_writing;             // pentru a semnaliza daca procesarea de catre reduceri s-a terminat (coada de task-uri "reduce" este goala)
+    bool finished_reducing;
+    unsigned int num_finished_aggregation;
 } threadpool_t;
 
 typedef struct {

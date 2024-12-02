@@ -5,8 +5,11 @@
 #include <fstream>
 #include <pthread.h>
 #include <sstream>
+#include <algorithm>
 
 #include "threadpool.h"
+
+#define NUM_LETTERS 26
 
 using namespace std;
 
@@ -34,7 +37,7 @@ void extract_words_from_file(ifstream& input, unsigned int file_id, map<string, 
         stringstream words(current_line);
         while (words >> word) {
             string normalized_word = normalize_word(word);
-            // verifica daca cuvantul se afla in lista partiala
+            // verifica daca cuvantul nu se afla in lista partiala
             if (partial_list->find(normalized_word) == partial_list->end()) {
                 // adauga cuvantul si file_id-ul primit in lista
                 vector<unsigned int> file_ids;
@@ -131,9 +134,10 @@ void *reducer_function(void *arg) {
         exit(-1);
     }
 
-    // declarare lista finala generata de thread-ul curent
+    // declarare lista finala generata de thread-ul curent pentru fiecare litera
     // aceasta contine elemente de tipul (cuvant, lista de indecsi ai fisierelor)
-    map<string, vector<unsigned int>> thread_list;
+    vector<vector<pair<string, vector<unsigned int>>>> thread_final_list(NUM_LETTERS);
+    bool finished_aggregation = false;
 
     // procesare task-uri
     while (true) {
@@ -144,28 +148,125 @@ void *reducer_function(void *arg) {
             pthread_mutex_unlock(&tp->work_mutex);
             pthread_exit(NULL);
         }
-        if (tp->finished_aggregation) {
-            // TODO: primul thread disponibil se ocupa de scrierea fisierelor "litera".txt
 
+        if ((tp->num_finished_aggregation == tp->num_reducer_threads) && !tp->started_writing) {
+            // toate thread-urile reducer au terminat agregarea,
+            // acum un singur thread se ocupa de scrierea in fisiere
+
+            // tp->started_writing = true;
+            // pthread_mutex_unlock(&tp->work_mutex);
+
+            // sortare lista finala
+            for (unsigned int i = 0; i < NUM_LETTERS; i++) {
+                sort(tp->final_lists[i].begin(), tp->final_lists[i].end(), sort_elements());
+            }
+
+            // scriere in fisiere
+            for (unsigned int i = 0; i < NUM_LETTERS; i++) {
+                // deschidere fisier pentru scriere
+                ofstream letter_file;
+                string filename = string(1, i+'a') + ".txt";
+                cout << "file is: " << filename << "\n";
+
+                letter_file.open(filename);
+
+                if (!letter_file.is_open()) {
+                    std::cerr << "Error opening file: " << filename << std::endl;
+                }
+
+                for (unsigned int j = 0; j < tp->final_lists[i].size(); j++) {
+                    string word = tp->final_lists[i][j].first;
+                    vector<unsigned int> str_vec = tp->final_lists[i][j].second;
+                    // scrie cuvintele in fisier
+                    letter_file << word << ": [";
+                    cout << "word: "<< word << "\n file ids: ";
+                    for (size_t k = 0; k < str_vec.size(); k++){
+                        if (k == str_vec.size() - 1) {
+                            // no space char after last file id
+                            letter_file << str_vec[k];
+                        } else {
+                            letter_file << str_vec[k] << " ";
+                        }
+                        cout << str_vec[k] << ", ";
+                    }                    
+                    letter_file << "]\n";
+                }
+
+                letter_file.close();
+            }
+
+            // semnalizeaza terminarea operatiei "reduce" catre toate thread-urile
+            // pthread_mutex_lock(&tp->work_mutex);
             tp->finished_reducing = true;
             pthread_mutex_unlock(&tp->work_mutex);
             pthread_exit(NULL);
         }
 
         // verifica daca mapperii au terminat lucrul
-        if (tp->finished_mapping) {
+        if (tp->finished_mapping && !finished_aggregation) {            
             // agregarea cuvintelor din listele partiale disponibile in lista thread-ului curent
-
-            // cauta prima lista nevizitata
+            int unvisited_partial_list = -1; 
+            // cauta prima lista partiala nevizitata
             for (size_t i = 0; i < tp->num_mapper_threads; i++) {
                 if (!(tp->partial_lists[i].is_visited_by_reducer)) {
-                    // TODO
-                    // process given unvisited partial list and put it in the thread list
+                    // marcheaza lista partiala ca fiind vizitata
+                    tp->partial_lists[i].is_visited_by_reducer = true;
+                    unvisited_partial_list = i;
+                    pthread_mutex_unlock(&tp->work_mutex);
+                    break;
                 }
             }
-            
-            pthread_mutex_unlock(&tp->work_mutex);
-            pthread_exit(NULL);
+
+            if (unvisited_partial_list != -1) {
+                // proceseaza lista partiala nevizitata data si o pune in lista finala
+                for (const auto &current_word : tp->partial_lists[unvisited_partial_list].elems) {
+                    unsigned int letter_index = current_word.first[0] - 'a';
+                    thread_final_list[letter_index].push_back(make_pair(current_word.first, current_word.second));
+
+                    // agregarea cuvintelor in lista finala
+                    // listele partiale contin doar indici diferiti ai file_id-urilor, deci nu e nevoie sa verificam existenta duplicatelor
+                    int found_word_idx = -1;
+                    
+                    pthread_mutex_lock(&tp->work_mutex);
+
+                    for (unsigned int i = 0; i < tp->final_lists[letter_index].size(); i++) {
+                        if (tp->final_lists[letter_index][i].first == current_word.first) {
+                            found_word_idx = i;
+                        }
+                    }
+
+                    if (found_word_idx == -1) {
+                        // cuvantul nu a fost gasit in lista finala
+                        // adauga cuvantul dat cu file_id-uri in lista finala
+                        tp->final_lists[letter_index].push_back(make_pair(current_word.first, current_word.second));
+                    } else {
+                        // adauga id-urile gasite in vectorul corespunzator listei literei din lista finala
+                        tp->final_lists[letter_index][found_word_idx].second.insert(tp->final_lists[letter_index][found_word_idx].second.end(), current_word.second.begin(), current_word.second.end());
+                    }
+
+                    pthread_mutex_unlock(&tp->work_mutex);
+
+                    // sort(thread_final_list[letter_index].begin(), thread_final_list[letter_index].end(), sort_elements());
+                }
+
+                // cout << "new sizee:" << thread_final_list.size();
+                // cout << "sorted list:";
+                // for (size_t i = 0; i < thread_final_list.size(); i++) {
+                //     if (thread_final_list[i].size() == 0) {
+                //         cout << "litera urmatoare este goala:";
+                //     }
+                //     cout << "litera " << to_string(i+'a') << ": ";
+                //     for (size_t j = 0; j < thread_final_list[i].size(); j++) {
+                //         cout << thread_final_list[i][j].first << ", ";
+                //     }
+                //     cout << "\n";
+                // }
+                
+            } else {
+                // nu mai sunt liste nevizitate, se incrementeaza numarul de thread-uri care au finalizat agregarea
+                finished_aggregation = true;
+                tp->num_finished_aggregation++;
+            }
         }
 
         pthread_mutex_unlock(&tp->work_mutex);
@@ -227,9 +328,11 @@ int main(int argc, char **argv)
     tp.num_reducer_threads = num_reducer_threads;
     tp.finished_mapping = false;
     tp.finished_reducing = false;
+    tp.started_writing = false;
     pthread_mutex_init(&(tp.work_mutex), NULL);
     tp.threads = (pthread_t*) calloc(num_mapper_threads + num_reducer_threads, sizeof(pthread_t));
     tp.partial_lists = new partial_list_t[num_mapper_threads];
+    tp.final_lists = new vector<pair<string, vector<unsigned int>>>[NUM_LETTERS];
     
     // adaugarea datelor fisierelor in coada
     for (size_t i = 1; getline(fin, line); i++) {
