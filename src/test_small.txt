@@ -1,4 +1,12 @@
-3
+10
 test_in_small/file1.txt
 test_in_small/file2.txt
 test_in_small/file3.txt
+test_in/pride_and_prejudice/chapter_1.txt
+test_in/pride_and_prejudice/chapter_2.txt
+test_in/pride_and_prejudice/chapter_3.txt
+test_in/pride_and_prejudice/chapter_4.txt
+test_in/pride_and_prejudice/chapter_5.txt
+test_in/pride_and_prejudice/chapter_6.txt
+test_in/pride_and_prejudice/chapter_7.txt
+test_in/pride_and_prejudice/chapter_8.txt

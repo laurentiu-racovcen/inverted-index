@@ -45,7 +45,7 @@ typedef struct {
     pthread_cond_t cond;
     partial_list_t* partial_lists;    // o lista partiala contine elemente de forma (cuvant, lista de file_id-uri)
     vector<pair<string, vector<unsigned int>>>* final_lists;
-    bool finished_mapping;            // pentru a semnaliza daca procesarea de catre mapperi s-a terminat (coada de task-uri "map" este goala)
+    unsigned int num_finished_mapping;            // pentru a semnaliza daca procesarea de catre mapperi s-a terminat (coada de task-uri "map" este goala)
     bool started_writing;             // pentru a semnaliza daca procesarea de catre reduceri s-a terminat (coada de task-uri "reduce" este goala)
     bool finished_reducing;
     unsigned int num_finished_aggregation;
