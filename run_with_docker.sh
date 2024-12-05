@@ -10,6 +10,6 @@ then
 	exit
 fi
 
-docker exec -w /apd/checker -it apd_container /apd/checker/checker.sh
+docker exec -w /apd/checker apd_container sh -c "for i in \$(seq 1 100); do /apd/checker/checker.sh | tail -n3; sleep 3; done"
 docker compose down
 cd ..

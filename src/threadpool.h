@@ -23,11 +23,14 @@ struct sort_elements {
 };
 
 typedef struct {
-    map<string, vector<unsigned int>> elems; // lista de forma (cuvant, file_id list)
-    bool is_visited_by_reducer; // pentru sincronizarea thread-urilor reducer
+    map<string, vector<unsigned int>> elems;
+    bool is_visited_by_reducer;
 } partial_list_t;
 
-typedef vector<pair<string, vector<unsigned int>>> final_list_t;
+typedef struct {
+    vector<pair<string, vector<unsigned int>>> word_list;
+    bool is_visited_by_reducer;
+} final_list_t;
 
 typedef struct {
     unsigned int file_id;
@@ -38,15 +41,16 @@ typedef struct {
     unsigned int num_mapper_threads;
     unsigned int num_reducer_threads;
     pthread_t *threads;
-    pthread_mutex_t work_mutex;        // pentru sincronizarea operatiilor efectuate de thread-uri
-    queue<file_info_t> files_queue;    // stocheaza datele fisierelor care trebuie procesate de mapperi
+    pthread_mutex_t work_mutex;         // pentru sincronizarea operatiilor efectuate de thread-uri
+    queue<file_info_t> files_queue;     // stocheaza datele fisierelor care trebuie procesate de mapperi
     pthread_cond_t cond;
     partial_list_t* partial_lists;
     final_list_t* final_lists;
-    unsigned int num_finished_mapping; // pentru a semnaliza daca procesarea de catre mapperi s-a terminat
-    bool started_writing;              // pentru a semnaliza daca un thread a inceput scrierea in fisiere
-    bool finished_reducing;            // pentru a semnaliza daca procesarea de catre reduceri s-a terminat
-    unsigned int num_finished_aggregation;
+    pthread_barrier_t mappers_work_barrier; // pentru ca reducerii sa astepte mapperii sa isi termine lucrul
+    bool started_writing;                   // pentru a semnaliza daca un thread a inceput scrierea in fisiere
+    bool finished_reducing;                 // pentru a semnaliza daca procesarea de catre reduceri s-a terminat
+    bool *finished_aggregation;
+    bool *reducers_finished_sorting;
 } threadpool_t;
 
 typedef struct {
