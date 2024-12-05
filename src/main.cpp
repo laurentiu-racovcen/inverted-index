@@ -15,8 +15,7 @@ using namespace std;
 
 // Functie care transforma cuvintele astfel incat acestea sa contina
 // doar caractere alfabetice
-string normalize_word(string word) {
-    // cout << "before: " << word << "\n";
+string transform_word(string word) {
     for (size_t i = 0; i < word.size(); i++) {
         if ((word[i] >= 'A') && (word[i] <= 'Z')) {
             // transforma caracterele uppercase in caractere lowercase
@@ -31,30 +30,30 @@ string normalize_word(string word) {
     return word;
 }
 
-// Functie care extrage toate cuvintele unice dintr-un fisier
+// Functie care extrage toate cuvintele unice dintr-un fisier si le pune intr-o lista partiala
 void extract_words_from_file(ifstream& input, unsigned int file_id, map<string, vector<unsigned int>> *partial_list) {
     string current_line;
     while (getline(input, current_line)) {
         string word;
         stringstream words(current_line);
         while (words >> word) {
-            string normalized_word = normalize_word(word);
-            if (!normalized_word.empty()) {
+            string transformed_word = transform_word(word);
+            if (!transformed_word.empty()) {
                 // verifica daca cuvantul nu se afla in lista partiala
-                if (partial_list->find(normalized_word) == partial_list->end()) {
+                if (partial_list->find(transformed_word) == partial_list->end()) {
                     // adauga cuvantul si file_id-ul primit in lista
                     vector<unsigned int> file_ids;
                     file_ids.push_back(file_id);
-                    partial_list->insert(make_pair(normalized_word, file_ids));
+                    partial_list->insert(make_pair(transformed_word, file_ids));
                 } else {
                     // lista de file_id-uri nu este goala;
                     // daca file_id-ul curent nu exista in lista de file_id-uri ale cuvantului, acesta se adauga
                     bool found_id = false;
-                    for (auto id : partial_list->at(normalized_word)) {
+                    for (auto id : partial_list->at(transformed_word)) {
                         if (id == file_id) found_id = true;
                     }
                     if (!found_id) {
-                        partial_list->at(normalized_word).push_back(file_id);
+                        partial_list->at(transformed_word).push_back(file_id);
                     }
                 }
             }
@@ -68,10 +67,10 @@ void *mapper_function(void *arg) {
         exit(-1);
     }
 
-    // extragere date din thread_struct
-    thread_struct_t *thread_struct = (thread_struct_t *) arg;
-    threadpool_t *tp = (threadpool_t *) thread_struct->threadpool;
-    unsigned int thread_id = thread_struct->thread_id;
+    // extragere date din structura thread-ului
+    thread_data_t *thread_data = (thread_data_t *) arg;
+    threadpool_t *tp = (threadpool_t *) thread_data->threadpool;
+    unsigned int thread_id = thread_data->thread_id;
 
     map<string, vector<unsigned int>> partial_list;
     // procesarea fisierelor disponibile in coada
@@ -115,11 +114,14 @@ void *mapper_function(void *arg) {
 }
 
 void *reducer_function(void *arg) {
-    threadpool_t *tp = (threadpool_t *) arg;
-    if (tp == NULL) {
+    if (arg == NULL) {
         cout << "Argumentul pentru reducer function nu este valid!";
         exit(-1);
     }
+
+    // extragere date din thread_struct
+    thread_data_t *thread_data = (thread_data_t *) arg;
+    threadpool_t *tp = (threadpool_t *) thread_data->threadpool;
 
     // declarare lista finala generata de thread-ul curent pentru fiecare litera
     // aceasta contine elemente de tipul (cuvant, lista de indecsi ai fisierelor)
@@ -153,7 +155,7 @@ void *reducer_function(void *arg) {
                 sort(tp->final_lists[i].begin(), tp->final_lists[i].end(), sort_elements());
             }
 
-            // scriere in fisiere
+            // scriere in fisierele corespunzatoare literelor
             for (unsigned int i = 0; i < NUM_LETTERS; i++) {
                 // deschidere fisier pentru scriere
                 ofstream letter_file;
@@ -161,7 +163,7 @@ void *reducer_function(void *arg) {
                 letter_file.open(filename);
 
                 if (!letter_file.is_open()) {
-                    std::cerr << "Error opening file: " << filename << std::endl;
+                    cerr << "Eroare la deschiderea fisierului: " << filename << endl;
                 }
 
                 for (unsigned int j = 0; j < tp->final_lists[i].size(); j++) {
@@ -169,9 +171,9 @@ void *reducer_function(void *arg) {
                     vector<unsigned int> str_vec = tp->final_lists[i][j].second;
                     // scrie cuvintele in fisier
                     letter_file << word << ": [";
-                    for (size_t k = 0; k < str_vec.size(); k++){
+                    for (size_t k = 0; k < str_vec.size(); k++) {
                         if (k == str_vec.size() - 1) {
-                            // no space char after last file id
+                            // fara inserare spatiu dupa ultimul file id
                             letter_file << str_vec[k];
                         } else {
                             letter_file << str_vec[k] << " ";
@@ -190,8 +192,9 @@ void *reducer_function(void *arg) {
             pthread_exit(NULL);
         }
 
-        // verifica daca mapperii au terminat lucrul
-        if ((tp->num_finished_mapping == tp->num_mapper_threads) && (tp->num_finished_aggregation != tp->num_reducer_threads)) {
+        // verifica daca mapperii au terminat lucrul,
+        // dar reducerii inca nu au terminat agregarea
+        if ((tp->num_finished_mapping == tp->num_mapper_threads) && (tp->num_finished_aggregation < tp->num_reducer_threads)) {
             // agregarea cuvintelor din listele partiale disponibile in lista thread-ului curent
             int unvisited_partial_list = -1;
             // cauta prima lista partiala nevizitata
@@ -219,7 +222,6 @@ void *reducer_function(void *arg) {
                             found_word_idx = i;
                         }
                     }
-
                     if (found_word_idx == -1) {
                         // cuvantul nu a fost gasit in lista finala
                         // adauga cuvantul dat cu file_id-uri in lista finala
@@ -228,10 +230,10 @@ void *reducer_function(void *arg) {
                         // adauga id-urile gasite in vectorul corespunzator listei literei din lista finala
                         tp->final_lists[letter_index][found_word_idx].second.insert(tp->final_lists[letter_index][found_word_idx].second.end(), current_word.second.begin(), current_word.second.end());
                     }
-
                 }
             } else {
-                // nu mai sunt liste nevizitate, se incrementeaza numarul de thread-uri care au finalizat agregarea
+                // nu mai sunt liste nevizitate, se incrementeaza
+                // numarul de thread-uri care au finalizat agregarea
                 tp->num_finished_aggregation++;
             }
         }
@@ -279,15 +281,10 @@ int main(int argc, char **argv)
         exit(3);
     }
 
-    cout << "Numarul de mapper threads: " << num_mapper_threads << "\n";
-    cout << "Numarul de reducer threads: " << num_reducer_threads << "\n";
-    cout << "Fisierul citit: " << argv[3] << "\n";
-
     // citire numar fisiere
     string line;
     getline(fin, line);
     unsigned long files_num = stoul(line);
-    cout << "Numarul de fisiere: " << files_num << "\n";
 
     // initializare threadpool
     threadpool_t tp;
@@ -300,9 +297,9 @@ int main(int argc, char **argv)
     pthread_mutex_init(&(tp.work_mutex), NULL);
     tp.threads = (pthread_t*) calloc(num_mapper_threads + num_reducer_threads, sizeof(pthread_t));
     tp.partial_lists = new partial_list_t[num_mapper_threads];
-    tp.final_lists = new vector<pair<string, vector<unsigned int>>>[NUM_LETTERS];
+    tp.final_lists = new final_list_t[NUM_LETTERS];
 
-    // initialize partial_lists bool
+    // initializare valoare bool a listelor partiale
     for (size_t i = 0; i < tp.num_mapper_threads; i++) {
         tp.partial_lists[i].is_visited_by_reducer = false;
     }
@@ -316,28 +313,29 @@ int main(int argc, char **argv)
         tp.files_queue.push(file_info);
     }
 
-    // se initializeaza thread-urile "mapper"
-    for (unsigned int i = 0; i < num_mapper_threads; i++) {
-        thread_struct_t *thread_struct = new thread_struct_t;
-        thread_struct->thread_id = i;
-        thread_struct->threadpool = &tp;
-        int ret = pthread_create(&tp.threads[i], NULL, mapper_function, thread_struct);
+    // creare coada pentru detaliile thread-urilor
+    queue<thread_struct_t*> threads_structs;
+    for (long int i = 0; i < num_mapper_threads + num_reducer_threads; i++) {
+        thread_struct_t *thread_struct= new thread_struct_t;
+        thread_struct->data.thread_id = i;
+        thread_struct->data.threadpool = &tp;
+        if (i < num_mapper_threads) {
+            thread_struct->function = mapper_function;
+        } else {
+            thread_struct->function = reducer_function;
+        }
+        threads_structs.push(thread_struct);
+    }
+
+    // se initializeaza toate thread-urile
+    for (long int i = 0; !threads_structs.empty(); i++) {
+        int ret = pthread_create(&tp.threads[i], NULL, threads_structs.front()->function, &threads_structs.front()->data);
         if (ret) {
             cout << "Eroare la crearea thread-ului " << i << "\n";
             exit(-1);
         }
+        threads_structs.pop();
     }
-
-    // se initializeaza thread-urile "reducer"
-    for (long int i = num_mapper_threads; i < num_mapper_threads + num_reducer_threads; i++) {
-        int ret = pthread_create(&tp.threads[i], NULL, reducer_function, &tp);
-        if (ret) {
-            cout << "Eroare la crearea thread-ului " << i << "\n";
-            exit(-1);
-        }
-    }
-
-    cout << "Se asteapta toate thread-urile...\n";
 
     // se asteapta toate thread-urile
     for (int i = 0; i < num_mapper_threads + num_reducer_threads; i++) {
