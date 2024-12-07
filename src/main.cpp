@@ -108,6 +108,90 @@ void *mapper_function(void *arg) {
     }
 }
 
+// Functi care se ocupa de procesarea listei partiale cu indexul "partial_list_idx"
+void process_partial_list(threadpool_t *tp, int partial_list_idx) {
+    if (tp == NULL) {
+        cout << "Argumentul \"tp\" pentru functia \"process_partial_list\" nu este valid!";
+        exit(4);
+    }
+    for (const auto &current_word : tp->partial_lists[partial_list_idx].elems) {
+        unsigned int letter_index = current_word.first[0] - 'a';
+
+        // agregarea cuvintelor in lista finala
+        // listele partiale contin doar indici diferiti ai file_id-urilor,
+        // deci nu e nevoie sa verificam existenta duplicatelor
+        int found_word_idx = -1;
+
+        for (unsigned int i = 0; i < tp->final_lists[letter_index].word_list.size(); i++) {
+            if (tp->final_lists[letter_index].word_list[i].first == current_word.first) {
+                found_word_idx = i;
+            }
+        }
+        if (found_word_idx == -1) {
+            // cuvantul nu a fost gasit in lista finala
+            // adauga cuvantul dat cu file_id-uri in lista finala
+            tp->final_lists[letter_index].word_list.push_back(make_pair(current_word.first, current_word.second));
+        } else {
+            // adauga id-urile gasite in vectorul corespunzator listei literei din lista finala
+            tp->final_lists[letter_index].word_list[found_word_idx].second.insert(
+                tp->final_lists[letter_index].word_list[found_word_idx].second.end(), 
+                current_word.second.begin(),
+                current_word.second.end()
+            );
+        }
+    }
+}
+
+// Functie care se ocupa de scrierea fisierelor corespunzatoare literelor
+void write_output_files(threadpool_t *tp) {
+    pthread_mutex_lock(&tp->work_mutex);
+    if (!tp->started_writing) {
+        // toate thread-urile reducer au terminat sortarea,
+        // acum un singur thread se ocupa de scrierea in fisiere
+        tp->started_writing = true;
+        pthread_mutex_unlock(&tp->work_mutex);
+
+        // scriere in fisierele corespunzatoare literelor
+        for (unsigned int i = 0; i < NUM_LETTERS; i++) {
+            // deschidere fisier pentru scriere
+            ofstream letter_file;
+            string filename = string(1, i+'a') + ".txt";
+            letter_file.open(filename);
+
+            if (!letter_file.is_open()) {
+                cerr << "Eroare la deschiderea fisierului: " << filename << endl;
+            }
+
+            for (unsigned int j = 0; j < tp->final_lists[i].word_list.size(); j++) {
+                string word = tp->final_lists[i].word_list[j].first;
+                vector<unsigned int> str_vec = tp->final_lists[i].word_list[j].second;
+                // scrie cuvintele in fisier
+                letter_file << word << ": [";
+                for (size_t k = 0; k < str_vec.size(); k++) {
+                    if (k == str_vec.size() - 1) {
+                        // fara inserare spatiu dupa ultimul file id
+                        letter_file << str_vec[k];
+                    } else {
+                        letter_file << str_vec[k] << " ";
+                    }
+                }                    
+                letter_file << "]\n";
+            }
+
+            letter_file.close();
+        }
+
+        // semnalizeaza terminarea operatiei "reduce" catre toate thread-urile reducer
+        pthread_mutex_lock(&tp->work_mutex);
+        tp->finished_reducing = true;
+        pthread_mutex_unlock(&tp->work_mutex);
+    } else {
+        // celelalte thread-uri dau exit
+        pthread_mutex_unlock(&tp->work_mutex);
+        pthread_exit(NULL);
+    }
+}
+
 void *reducer_function(void *arg) {
     if (arg == NULL) {
         cout << "Argumentul pentru reducer function nu este valid!";
@@ -121,7 +205,6 @@ void *reducer_function(void *arg) {
 
     // declarare lista finala generata de thread-ul curent pentru fiecare litera
     // aceasta contine elemente de tipul (cuvant, lista de indecsi ai fisierelor)
-    vector<vector<pair<string, vector<unsigned int>>>> thread_final_list(NUM_LETTERS);
 
     // asteapta ca toti mapperii sa isi termine lucrul
     pthread_barrier_wait(&tp->mappers_work_barrier);
@@ -147,30 +230,10 @@ void *reducer_function(void *arg) {
         }
         if (unvisited_partial_list != -1) {
             // proceseaza lista partiala nevizitata data si o pune in lista finala
-            for (const auto &current_word : tp->partial_lists[unvisited_partial_list].elems) {
-                unsigned int letter_index = current_word.first[0] - 'a';
-                thread_final_list[letter_index].push_back(make_pair(current_word.first, current_word.second));
-
-                // agregarea cuvintelor in lista finala
-                // listele partiale contin doar indici diferiti ai file_id-urilor, deci nu e nevoie sa verificam existenta duplicatelor
-                int found_word_idx = -1;
-
-                for (unsigned int i = 0; i < tp->final_lists[letter_index].word_list.size(); i++) {
-                    if (tp->final_lists[letter_index].word_list[i].first == current_word.first) {
-                        found_word_idx = i;
-                    }
-                }
-                if (found_word_idx == -1) {
-                    // cuvantul nu a fost gasit in lista finala
-                    // adauga cuvantul dat cu file_id-uri in lista finala
-                    tp->final_lists[letter_index].word_list.push_back(make_pair(current_word.first, current_word.second));
-                } else {
-                    // adauga id-urile gasite in vectorul corespunzator listei literei din lista finala
-                    tp->final_lists[letter_index].word_list[found_word_idx].second.insert(tp->final_lists[letter_index].word_list[found_word_idx].second.end(), current_word.second.begin(), current_word.second.end());
-                }
-            }
+            process_partial_list(tp, unvisited_partial_list);
             pthread_mutex_unlock(&tp->work_mutex);
         } else {
+            // au fost vizitate toate listele partiale
             tp->finished_aggregation[thread_id - tp->num_mapper_threads] = true;
             bool all_reducers_finished_aggregation = true;
             for (size_t i = 0; i < tp->num_reducer_threads; i++) {
@@ -180,7 +243,6 @@ void *reducer_function(void *arg) {
                 }
             }
             pthread_mutex_unlock(&tp->work_mutex);
-
             if (all_reducers_finished_aggregation) {
                 pthread_mutex_lock(&tp->work_mutex);
                 int unvisited_final_list = -1;
@@ -194,15 +256,17 @@ void *reducer_function(void *arg) {
                     }
                 }
                 pthread_mutex_unlock(&tp->work_mutex);
-
                 if (unvisited_final_list != -1) {
                     // sortare lista finala corespunzatoare literei de la index-ul "unvisited_final_list"
                     // sortare crescatoare a file_id-urilor fiecarui cuvant
                     for (unsigned int j = 0; j < tp->final_lists[unvisited_final_list].word_list.size(); j++) {
-                        sort(tp->final_lists[unvisited_final_list].word_list[j].second.begin(), tp->final_lists[unvisited_final_list].word_list[j].second.end());
+                        sort(tp->final_lists[unvisited_final_list].word_list[j].second.begin(),
+                             tp->final_lists[unvisited_final_list].word_list[j].second.end());
                     }
                     // sortarea cuvintelor care incep cu litera de la index-ul "unvisited_final_list"
-                    sort(tp->final_lists[unvisited_final_list].word_list.begin(), tp->final_lists[unvisited_final_list].word_list.end(), sort_elements());
+                    sort(tp->final_lists[unvisited_final_list].word_list.begin(),
+                         tp->final_lists[unvisited_final_list].word_list.end(),
+                         sort_elements());
                 } else {
                     pthread_mutex_lock(&tp->work_mutex);
                     tp->reducers_finished_sorting[thread_id] = true;
@@ -214,54 +278,8 @@ void *reducer_function(void *arg) {
                         }
                     }
                     pthread_mutex_unlock(&tp->work_mutex);
-
                     if (all_reducers_finished_sorting) {
-                        pthread_mutex_lock(&tp->work_mutex);
-                        if (!tp->started_writing) {
-                            // toate thread-urile reducer au terminat sortarea,
-                            // acum un singur thread se ocupa de scrierea in fisiere
-                            tp->started_writing = true;
-                            pthread_mutex_unlock(&tp->work_mutex);
-
-                            // scriere in fisierele corespunzatoare literelor
-                            for (unsigned int i = 0; i < NUM_LETTERS; i++) {
-                                // deschidere fisier pentru scriere
-                                ofstream letter_file;
-                                string filename = string(1, i+'a') + ".txt";
-                                letter_file.open(filename);
-
-                                if (!letter_file.is_open()) {
-                                    cerr << "Eroare la deschiderea fisierului: " << filename << endl;
-                                }
-
-                                for (unsigned int j = 0; j < tp->final_lists[i].word_list.size(); j++) {
-                                    string word = tp->final_lists[i].word_list[j].first;
-                                    vector<unsigned int> str_vec = tp->final_lists[i].word_list[j].second;
-                                    // scrie cuvintele in fisier
-                                    letter_file << word << ": [";
-                                    for (size_t k = 0; k < str_vec.size(); k++) {
-                                        if (k == str_vec.size() - 1) {
-                                            // fara inserare spatiu dupa ultimul file id
-                                            letter_file << str_vec[k];
-                                        } else {
-                                            letter_file << str_vec[k] << " ";
-                                        }
-                                    }                    
-                                    letter_file << "]\n";
-                                }
-
-                                letter_file.close();
-                            }
-
-                            // semnalizeaza terminarea operatiei "reduce" catre toate thread-urile reducer
-                            pthread_mutex_lock(&tp->work_mutex);
-                            tp->finished_reducing = true;
-                            pthread_mutex_unlock(&tp->work_mutex);
-                        } else {
-                            // celelalte thread-uri dau exit
-                            pthread_mutex_unlock(&tp->work_mutex);
-                            pthread_exit(NULL);
-                        }
+                        write_output_files(tp);
                     }
                 }
             }
