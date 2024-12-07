@@ -8,8 +8,8 @@
 
 using namespace std;
 
+// Pentru sortarea elementelor listei finale
 struct sort_elements {
-    // Functie care sorteaza elementele listei finale
     bool operator() (const pair<string, vector<unsigned int>> &a,
                     const pair<string, vector<unsigned int>> &b) const {
         // sortare descrescatoare
@@ -38,19 +38,18 @@ typedef struct {
 } file_info_t;
 
 typedef struct {
-    unsigned int num_mapper_threads;
-    unsigned int num_reducer_threads;
-    pthread_t *threads;
-    pthread_mutex_t work_mutex;         // pentru sincronizarea operatiilor efectuate de thread-uri
-    queue<file_info_t> files_queue;     // stocheaza datele fisierelor care trebuie procesate de mapperi
-    pthread_cond_t cond;
-    partial_list_t* partial_lists;
-    final_list_t* final_lists;
+    unsigned int num_mapper_threads;        // numarul de thread-uri "mapper"
+    unsigned int num_reducer_threads;       // numarul de thread-uri "reducer"
+    pthread_t *threads;                     // array ce stocheaza toate thread-urile create
+    pthread_mutex_t work_mutex;             // pentru sincronizarea operatiilor efectuate de thread-uri
+    queue<file_info_t> files_queue;         // stocheaza datele fisierelor care trebuie procesate de mapperi
+    partial_list_t* partial_lists;          // partial_lists[i] este lista partiala a thread-ului mapper "i"
+    final_list_t* final_lists;              // final_lists[i] este lista finala a thread-ului reducer "i"
     pthread_barrier_t mappers_work_barrier; // pentru ca reducerii sa astepte mapperii sa isi termine lucrul
     bool started_writing;                   // pentru a semnaliza daca un thread a inceput scrierea in fisiere
     bool finished_reducing;                 // pentru a semnaliza daca procesarea de catre reduceri s-a terminat
-    bool *finished_aggregation;
-    bool *reducers_finished_sorting;
+    bool *finished_aggregation;             // finished_aggregation[i] ne spune daca thread-ul reducer "i" a terminat agregarea
+    bool *reducers_finished_sorting;        // reducers_finished_sorting[i] ne spune daca thread-ul reducer "i" a terminat sortarea
 } threadpool_t;
 
 typedef struct {

@@ -79,7 +79,8 @@ void *mapper_function(void *arg) {
 
         // daca in coada nu mai sunt fisiere de procesat
         if (tp->files_queue.empty()) {
-            // lista partiala a thread-ului se copiaza in lista de liste partiale ale thread-urilor
+            // lista partiala a thread-ului se copiaza in lista
+            // de liste partiale ale thread-urilor
             tp->partial_lists[thread_id].elems = partial_list;
 
             pthread_mutex_unlock(&tp->work_mutex);
@@ -316,7 +317,6 @@ int main(int argc, char **argv)
     threadpool_t tp;
     tp.num_mapper_threads = num_mapper_threads;
     tp.num_reducer_threads = num_reducer_threads;
-    // tp.num_finished_aggregation = 0;
     tp.finished_reducing = false;
     tp.started_writing = false;
     tp.finished_aggregation = (bool*) calloc(num_reducer_threads, sizeof(bool));
