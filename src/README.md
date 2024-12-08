@@ -63,7 +63,7 @@ Also, it's called `"pthread_barrier_wait(&tp->mappers_work_barrier)"` to signal 
 ## **Additional functions**
 
 **Functions used by the Mapper threads:**
-- `extract_words_from_file`: function that extracts all the unique words from a file and puts them in a partial list.
+- `extract_words_from_file`: function that extracts all the unique words from a file and adds them in a partial list.
 - `transform_word`: function that transforms words so that they contain only alphabetic characters.
 
 **Functions used by the Reducer threads:**

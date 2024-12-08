@@ -8,16 +8,15 @@
 
 using namespace std;
 
-// Pentru sortarea elementelor listei finale
+/* For sorting the final list elements */
 struct sort_elements {
     bool operator() (const pair<string, vector<unsigned int>> &a,
                     const pair<string, vector<unsigned int>> &b) const {
-        // sortare descrescatoare
-        // dupa numarul de fisiere in care este prezent cuvantul
+        /* descending sort by the number of files containing the word */
         if (a.second.size() != b.second.size()) {
             return a.second.size() > b.second.size();
         }
-        // sortare crescatoare alfabetica dupa cuvant
+        /* sort alphabetically ascending by word */
         return a.first < b.first;
     }
 };
@@ -38,18 +37,18 @@ typedef struct {
 } file_info_t;
 
 typedef struct {
-    unsigned int num_mapper_threads;        // numarul de thread-uri "mapper"
-    unsigned int num_reducer_threads;       // numarul de thread-uri "reducer"
-    pthread_t *threads;                     // array ce stocheaza toate thread-urile create
-    pthread_mutex_t work_mutex;             // pentru sincronizarea operatiilor efectuate de thread-uri
-    queue<file_info_t> files_queue;         // stocheaza datele fisierelor care trebuie procesate de mapperi
-    partial_list_t* partial_lists;          // partial_lists[i] este lista partiala a thread-ului mapper "i"
-    final_list_t* final_lists;              // final_lists[i] este lista finala a thread-ului reducer "i"
-    pthread_barrier_t mappers_work_barrier; // pentru ca reducerii sa astepte mapperii sa isi termine lucrul
-    bool started_writing;                   // pentru a semnaliza daca un thread a inceput scrierea in fisiere
-    bool finished_reducing;                 // pentru a semnaliza daca procesarea de catre reduceri s-a terminat
-    bool *finished_aggregation;             // finished_aggregation[i] ne spune daca thread-ul reducer "i" a terminat agregarea
-    bool *reducers_finished_sorting;        // reducers_finished_sorting[i] ne spune daca thread-ul reducer "i" a terminat sortarea
+    unsigned int num_mapper_threads;        // number of mapper threads
+    unsigned int num_reducer_threads;       // number of reducer threads
+    pthread_t *threads;                     // array storing all created threads
+    pthread_mutex_t work_mutex;             // to synchronize thread operations
+    queue<file_info_t> files_queue;         // store the data of the files to be processed by the mappers
+    partial_list_t* partial_lists;          // partial_lists[i] is the partial list of mapper thread "i"
+    final_list_t* final_lists;              // final_lists[i] is the final list of reducer thread "i"
+    pthread_barrier_t mappers_work_barrier; // for the reducers to wait for the mappers to finish their work
+    bool started_writing;                   // to signal if a thread has started writing to files
+    bool finished_reducing;                 // to signal if the processing by the reducer threads has finished
+    bool *finished_aggregation;             // finished_aggregation[i] tells if the reducer thread "i" has finished aggregating
+    bool *reducers_finished_sorting;        // reducers_finished_sorting[i] tells if reducer thread "i" has finished sorting
 } threadpool_t;
 
 typedef struct {

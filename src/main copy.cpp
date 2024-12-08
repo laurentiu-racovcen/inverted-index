@@ -62,7 +62,7 @@ void extract_words_from_file(ifstream& input, unsigned int file_id, map<string, 
 
 void *mapper_function(void *arg) {
     if (arg == NULL) {
-        cout << "The argument for mapper function is not valid!";
+        cout << "Argumentul pentru mapper function nu este valid!";
         exit(-1);
     }
 
@@ -94,7 +94,7 @@ void *mapper_function(void *arg) {
         /* process the given file from queue */
         ifstream q_file(file_info.file_path);
         if (!q_file) {
-            cerr << "\nThe file could not be opened: " << file_info.file_path << " !\n\n";
+            cerr << "\nNu a putut fi deschis fisierul " << file_info.file_path << " !\n\n";
         }
 
         /* partial_lists[i] contains the partial list corresponding
@@ -109,7 +109,7 @@ void *mapper_function(void *arg) {
  * corresponding to the given index argument */
 void process_partial_list(threadpool_t *tp, int partial_list_idx) {
     if (tp == NULL) {
-        cout << "The argument \"tp\" for \"process_partial_list\" function is not valid!";
+        cout << "Argumentul \"tp\" pentru functia \"process_partial_list\" nu este valid!";
         exit(4);
     }
     /* aggregation of words from partial lists to the final lists */
@@ -155,13 +155,13 @@ void write_output_files(threadpool_t *tp) {
             letter_file.open(filename);
 
             if (!letter_file.is_open()) {
-                cerr << "Error at opening the file: " << filename << endl;
+                cerr << "Eroare la deschiderea fisierului: " << filename << endl;
             }
 
             for (unsigned int j = 0; j < tp->final_lists[i].word_list.size(); j++) {
                 string word = tp->final_lists[i].word_list[j].first;
                 vector<unsigned int> str_vec = tp->final_lists[i].word_list[j].second;
-                /* write the words in file */
+                /* write the words in the file */
                 letter_file << word << ": [";
                 for (size_t k = 0; k < str_vec.size(); k++) {
                     if (k == str_vec.size() - 1) {
@@ -190,7 +190,7 @@ void write_output_files(threadpool_t *tp) {
 
 void *reducer_function(void *arg) {
     if (arg == NULL) {
-        cout << "The argument for reducer function is not valid!";
+        cout << "Argumentul pentru reducer function nu este valid!";
         exit(-1);
     }
 
@@ -201,34 +201,32 @@ void *reducer_function(void *arg) {
 
     /* wait all mapper threads to finish their work */
     pthread_barrier_wait(&tp->mappers_work_barrier);
-
     /* process all partial lists obtained by mappers */
     while (true) {
         pthread_mutex_lock(&tp->work_mutex);
 
-        /* if there is no more work for the reducer threads,
-         * current thread exits */
+        // daca nu mai este de lucru pentru reduceri, thread-ul isi termina executia
         if (tp->finished_reducing) {
             pthread_mutex_unlock(&tp->work_mutex);
             pthread_exit(NULL);
         }
 
         int unvisited_partial_list = -1;
-        /* search the first unvisited partial list */
+        // cauta prima lista partiala nevizitata
         for (size_t i = 0; i < tp->num_mapper_threads; i++) {
             if (!(tp->partial_lists[i].is_visited_by_reducer)) {
-                /* mark the partial list as visited */
+                // marcheaza lista partiala ca fiind vizitata
                 tp->partial_lists[i].is_visited_by_reducer = true;
                 unvisited_partial_list = i;
                 break;
             }
         }
         if (unvisited_partial_list != -1) {
-            /* process the given partial list and add it in the final list */
+            // proceseaza lista partiala nevizitata data si o pune in lista finala
             process_partial_list(tp, unvisited_partial_list);
             pthread_mutex_unlock(&tp->work_mutex);
         } else {
-            /* all partial lists have been visited */
+            // au fost vizitate toate listele partiale
             tp->finished_aggregation[thread_id - tp->num_mapper_threads] = true;
             bool all_reducers_finished_aggregation = true;
             for (size_t i = 0; i < tp->num_reducer_threads; i++) {
@@ -241,10 +239,10 @@ void *reducer_function(void *arg) {
             if (all_reducers_finished_aggregation) {
                 pthread_mutex_lock(&tp->work_mutex);
                 int unvisited_final_list = -1;
-                /* search first unvisited final list */
+                // cauta prima lista finala nevizitata
                 for (size_t i = 0; i < NUM_LETTERS; i++) {
                     if (!(tp->final_lists[i].is_visited_by_reducer)) {
-                        /* mark the final list as visited */
+                        // marcheaza lista finala ca fiind vizitata
                         tp->final_lists[i].is_visited_by_reducer = true;
                         unvisited_final_list = i;
                         break;
@@ -252,12 +250,13 @@ void *reducer_function(void *arg) {
                 }
                 pthread_mutex_unlock(&tp->work_mutex);
                 if (unvisited_final_list != -1) {
-                    /* sort the final list corresponding to the letter of the index "unvisited_final_list" */
+                    // sortare lista finala corespunzatoare literei de la index-ul "unvisited_final_list"
+                    // sortare crescatoare a file_id-urilor fiecarui cuvant
                     for (unsigned int j = 0; j < tp->final_lists[unvisited_final_list].word_list.size(); j++) {
                         sort(tp->final_lists[unvisited_final_list].word_list[j].second.begin(),
                              tp->final_lists[unvisited_final_list].word_list[j].second.end());
                     }
-                    /* sort the words starting with the letter from the index "unvisited_final_list" */
+                    // sortarea cuvintelor care incep cu litera de la index-ul "unvisited_final_list"
                     sort(tp->final_lists[unvisited_final_list].word_list.begin(),
                          tp->final_lists[unvisited_final_list].word_list.end(),
                          sort_elements());
@@ -284,48 +283,48 @@ void *reducer_function(void *arg) {
 int main(int argc, char **argv)
 {
     if (argc != 4) {
-        cout << "\nUsage: <mappers_number> <reducers_number> <input_file>\n\n";
+        cout << "\nUtilizare: <numar_mapperi> <numar_reduceri> <fisier_intrare>\n\n";
         exit(0);
     }
 
     long int num_mapper_threads;
     long int num_reducer_threads;
 
-    /* store the <mappers_number> argument, if valid */
+    // se stocheaza argumentul <numar_mapperi>, daca este valid
     try {
         num_mapper_threads = stol(argv[1]);
         if (num_mapper_threads <= 0) {
-            throw std::invalid_argument("Mappers number is negative!");
+            throw std::invalid_argument("Numar de mapperi negativ");
         }
     } catch (const std::invalid_argument& e) {
-        cerr << "\nMappers number is not valid!\n\n";
+        cerr << "\nNumarul de mapperi nu este valid!\n\n";
         exit(1);
     }
 
-    /* store the <reducers_number> argument, if valid */
+    // se stocheaza argumentul <numar_reduceri>, daca este valid
     try {
         num_reducer_threads = stol(argv[2]);
         if (num_reducer_threads <= 0) {
-            throw std::invalid_argument("Reducers number is negative!");
+            throw std::invalid_argument("Numar de reduceri negativ");
         }
     } catch (const std::invalid_argument& e) {
-        cerr << "\nReducers number is not valid!\n\n";
+        cerr << "\nNumarul de reduceri nu este valid!\n\n";
         exit(2);
     }
 
-    /* open the input file if it is valid */
+    // se deschide fisierul, daca este valid
     ifstream fin(argv[3]);
     if (!fin) {
-        cerr << "\nThe file could not be opened!\n\n";
+        cerr << "\nNu a putut fi deschis fisierul!\n\n";
         exit(3);
     }
 
-    /* read files number */
+    // citire numar fisiere
     string line;
     getline(fin, line);
     unsigned long files_num = stoul(line);
 
-    /* initialize the threadpool */
+    // initializare threadpool
     threadpool_t tp;
     tp.num_mapper_threads = num_mapper_threads;
     tp.num_reducer_threads = num_reducer_threads;
@@ -339,17 +338,17 @@ int main(int argc, char **argv)
     tp.finished_aggregation = (bool*) calloc(num_reducer_threads, sizeof(bool));
     tp.reducers_finished_sorting = (bool*) calloc(num_reducer_threads, sizeof(bool));
 
-    /* initialize bool values of the partial lists */
+    // initializare valoare bool a listelor partiale
     for (size_t i = 0; i < tp.num_mapper_threads; i++) {
         tp.partial_lists[i].is_visited_by_reducer = false;
     }
 
-    /* initialize bool values of the final lists */
+    // initializare valoare bool a listelor finale
     for (size_t i = 0; i < NUM_LETTERS; i++) {
         tp.final_lists[i].is_visited_by_reducer = false;
     }
 
-    /* add file data to the queue */
+    // adaugarea datelor fisierelor in coada
     for (size_t i = 1; i <= files_num; i++) {
         getline(fin, line);
         file_info_t file_info;
@@ -358,7 +357,7 @@ int main(int argc, char **argv)
         tp.files_queue.push(file_info);
     }
 
-    /* create queue for thread details */
+    // creare coada pentru detaliile thread-urilor
     queue<thread_struct_t*> threads_structs;
     for (long int i = 0; i < num_mapper_threads + num_reducer_threads; i++) {
         thread_struct_t *thread_struct= new thread_struct_t;
@@ -372,31 +371,31 @@ int main(int argc, char **argv)
         threads_structs.push(thread_struct);
     }
 
-    /* initialize all the threads */
+    // se initializeaza toate thread-urile
     for (long int i = 0; !threads_structs.empty(); i++) {
         int ret = pthread_create(&tp.threads[i], NULL, threads_structs.front()->function, &threads_structs.front()->data);
         if (ret) {
-            cout << "Error creating thread " << i << "\n";
+            cout << "Eroare la crearea thread-ului " << i << "\n";
             exit(-1);
         }
         threads_structs.pop();
     }
 
-    /* wait all the threads */
+    // se asteapta toate thread-urile
     for (int i = 0; i < num_mapper_threads + num_reducer_threads; i++) {
         void *status;
         int ret = pthread_join(tp.threads[i], &status);
         if (ret) {
-            cout << "Error waiting thread " << i << "\n";
+            cout << "Eroare la asteptarea thread-ului " << i << "\n";
             exit(-1);
         }
     }
 
-    /* destroy synchronization primitives */
+    // distrugere mutex din threadpool
     pthread_mutex_destroy(&(tp.work_mutex));
     pthread_barrier_destroy(&(tp.mappers_work_barrier));
 
-    /* free threads and lists allocated memory */
+    // se elibereaza memoria alocata pentru thread-uri si pentru liste
     free(tp.threads);
     delete[] tp.partial_lists;
 
