@@ -108,7 +108,7 @@ void *mapper_function(void *arg) {
     }
 }
 
-// Functi care se ocupa de procesarea listei partiale cu indexul "partial_list_idx"
+// Functie care se ocupa de procesarea listei partiale cu indexul "partial_list_idx"
 void process_partial_list(threadpool_t *tp, int partial_list_idx) {
     if (tp == NULL) {
         cout << "Argumentul \"tp\" pentru functia \"process_partial_list\" nu este valid!";
@@ -116,12 +116,10 @@ void process_partial_list(threadpool_t *tp, int partial_list_idx) {
     }
     for (const auto &current_word : tp->partial_lists[partial_list_idx].elems) {
         unsigned int letter_index = current_word.first[0] - 'a';
-
         // agregarea cuvintelor in lista finala
         // listele partiale contin doar indici diferiti ai file_id-urilor,
         // deci nu e nevoie sa verificam existenta duplicatelor
         int found_word_idx = -1;
-
         for (unsigned int i = 0; i < tp->final_lists[letter_index].word_list.size(); i++) {
             if (tp->final_lists[letter_index].word_list[i].first == current_word.first) {
                 found_word_idx = i;
@@ -181,7 +179,7 @@ void write_output_files(threadpool_t *tp) {
             letter_file.close();
         }
 
-        // semnalizeaza terminarea operatiei "reduce" catre toate thread-urile reducer
+        // semnalizeaza terminarea operatiei "reduce"
         pthread_mutex_lock(&tp->work_mutex);
         tp->finished_reducing = true;
         pthread_mutex_unlock(&tp->work_mutex);
@@ -202,9 +200,6 @@ void *reducer_function(void *arg) {
     thread_data_t *thread_data = (thread_data_t *) arg;
     threadpool_t *tp = (threadpool_t *) thread_data->threadpool;
     unsigned int thread_id = thread_data->thread_id;
-
-    // declarare lista finala generata de thread-ul curent pentru fiecare litera
-    // aceasta contine elemente de tipul (cuvant, lista de indecsi ai fisierelor)
 
     // asteapta ca toti mapperii sa isi termine lucrul
     pthread_barrier_wait(&tp->mappers_work_barrier);
@@ -335,15 +330,15 @@ int main(int argc, char **argv)
     threadpool_t tp;
     tp.num_mapper_threads = num_mapper_threads;
     tp.num_reducer_threads = num_reducer_threads;
-    tp.finished_reducing = false;
-    tp.started_writing = false;
-    tp.finished_aggregation = (bool*) calloc(num_reducer_threads, sizeof(bool));
-    tp.reducers_finished_sorting = (bool*) calloc(num_reducer_threads, sizeof(bool));
-    pthread_mutex_init(&(tp.work_mutex), NULL);
-    pthread_barrier_init(&(tp.mappers_work_barrier), NULL, num_mapper_threads + num_reducer_threads);
     tp.threads = (pthread_t*) calloc(num_mapper_threads + num_reducer_threads, sizeof(pthread_t));
+    pthread_mutex_init(&(tp.work_mutex), NULL);
     tp.partial_lists = new partial_list_t[num_mapper_threads];
     tp.final_lists = new final_list_t[NUM_LETTERS];
+    pthread_barrier_init(&(tp.mappers_work_barrier), NULL, num_mapper_threads + num_reducer_threads);
+    tp.started_writing = false;
+    tp.finished_reducing = false;
+    tp.finished_aggregation = (bool*) calloc(num_reducer_threads, sizeof(bool));
+    tp.reducers_finished_sorting = (bool*) calloc(num_reducer_threads, sizeof(bool));
 
     // initializare valoare bool a listelor partiale
     for (size_t i = 0; i < tp.num_mapper_threads; i++) {
