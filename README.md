@@ -1,4 +1,4 @@
-# **Homework 1: Parallel computation of an inverted index using the Map-Reduce paradigm**
+# **Parallel computation of an inverted index using the Map-Reduce paradigm**
 
 >This project consists in implementing a parallel program in `Pthreads` to find an inverted index for a set of input files.
 
